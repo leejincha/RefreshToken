@@ -1,30 +1,39 @@
 package com.example.namoldak.service;
 
 import com.example.namoldak.domain.Member;
+import com.example.namoldak.domain.RefreshToken;
 import com.example.namoldak.dto.RequestDto.DeleteMemberRequestDto;
 import com.example.namoldak.dto.RequestDto.SignupRequestDto;
 import com.example.namoldak.dto.ResponseDto.MemberResponseDto;
 import com.example.namoldak.dto.ResponseDto.PrivateResponseBody;
+import com.example.namoldak.dto.ResponseDto.ResponseDto;
+import com.example.namoldak.repository.RefreshTokenRepository;
 import com.example.namoldak.util.GlobalResponse.CustomException;
 import com.example.namoldak.util.GlobalResponse.code.StatusCode;
 import com.example.namoldak.util.jwt.JwtUtil;
 import com.example.namoldak.repository.MemberRepository;
+import com.example.namoldak.util.jwt.TokenDto;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
 import javax.servlet.http.HttpServletResponse;
+import java.util.Optional;
 
 @RequiredArgsConstructor
 @Service
+@Slf4j
 public class MemberService {
     private final MemberRepository memberRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
+    private final RefreshTokenRepository refreshTokenRepository;
 
     // 회원가입
     @Transactional
-    public void signup(SignupRequestDto signupRequestDto){
+    public void signup(SignupRequestDto signupRequestDto) {
         String email = signupRequestDto.getEmail();
         String password = passwordEncoder.encode(signupRequestDto.getPassword());
         String nickname = signupRequestDto.getNickname();
@@ -55,25 +64,40 @@ public class MemberService {
             throw new CustomException(StatusCode.BAD_PASSWORD);
         }
 
-        response.addHeader(JwtUtil.AUTHORIZATION_HEADER, jwtUtil.createToken(member.getEmail()));
+//        response.addHeader(JwtUtil.AUTHORIZATION_HEADER, jwtUtil.createToken(member.getEmail()));
+        // user email 값을 포함한 토큰 생성 후 tokenDto 에 저장
+        TokenDto tokenDto = jwtUtil.createAllToken(signupRequestDto.getEmail());
+
+        // user email 값에 해당하는 refreshToken 을 DB에서 가져옴
+        Optional<RefreshToken> refreshToken = Optional.ofNullable(refreshTokenRepository.findByEmail(member.getEmail()));
+
+        if (refreshToken.isPresent()) {
+            refreshTokenRepository.saveRefreshToken(refreshToken.get().updateToken(tokenDto.getRefreshToken()));
+        } else {
+            RefreshToken newToken = new RefreshToken(tokenDto.getRefreshToken(), signupRequestDto.getEmail());
+            refreshTokenRepository.saveRefreshToken(newToken);
+        }
+
+        setHeader(response, tokenDto);
 
         return new MemberResponseDto(member);
     }
 
     // 이메일 중복 확인
     @Transactional(readOnly = true)
-    public boolean emailCheck(String email){
+    public boolean emailCheck(String email) {
         return memberRepository.findByEmail(email).isPresent();
     }
 
     // 닉네임 중복 확인
     @Transactional(readOnly = true)
-    public boolean nicknameCheck(String nickname){
+    public boolean nicknameCheck(String nickname) {
         return memberRepository.findByNickname(nickname).isPresent();
     }
 
+    // 회원 탈퇴
     public void deleteMember(Member member, DeleteMemberRequestDto deleteMemberRequestDto) {
-        if (passwordEncoder.matches(deleteMemberRequestDto.getPassword(), member.getPassword())){
+        if (passwordEncoder.matches(deleteMemberRequestDto.getPassword(), member.getPassword())) {
             memberRepository.delete(member);
         } else {
             throw new CustomException(StatusCode.BAD_PASSWORD);
@@ -84,13 +108,24 @@ public class MemberService {
     @Transactional
     public PrivateResponseBody changeNickname(SignupRequestDto signupRequestDto, Member member) {
         Member member1 = memberRepository.findById(member.getId()).orElseThrow(
-                ()-> new CustomException(StatusCode.LOGIN_MATCH_FAIL)
+                () -> new CustomException(StatusCode.LOGIN_MATCH_FAIL)
         );
-        if(member.getId().equals(member1.getId())){
+        if (member.getId().equals(member1.getId())) {
             member1.update(signupRequestDto);
-            return new PrivateResponseBody<>(StatusCode.OK,"닉네임 변경 완료");
-        }else {
-            throw new CustomException(StatusCode.CANT_ENTER);
+            return new PrivateResponseBody<>(StatusCode.OK, "닉네임 변경 완료");
+        } else {
+            throw new CustomException(StatusCode.BAD_REQUEST);
         }
+    }
+
+    // 토큰 재발행
+    public ResponseDto<String> issuedToken(String email, HttpServletResponse response){
+        response.addHeader(JwtUtil.ACCESS_TOKEN, jwtUtil.createToken(email, "Access"));
+        return ResponseDto.success("토큰재발행 성공");
+    }
+
+    private void setHeader(HttpServletResponse response, TokenDto tokenDto) {
+        response.addHeader(JwtUtil.ACCESS_TOKEN, tokenDto.getAccessToken());
+        response.addHeader(JwtUtil.REFRESH_TOKEN, tokenDto.getRefreshToken());
     }
 }

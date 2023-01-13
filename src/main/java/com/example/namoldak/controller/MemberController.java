@@ -2,6 +2,7 @@ package com.example.namoldak.controller;
 
 import com.example.namoldak.dto.RequestDto.DeleteMemberRequestDto;
 import com.example.namoldak.dto.RequestDto.SignupRequestDto;
+import com.example.namoldak.dto.ResponseDto.ResponseDto;
 import com.example.namoldak.service.KakaoService;
 import com.example.namoldak.service.MemberService;
 import com.example.namoldak.util.GlobalResponse.ResponseUtil;
@@ -59,7 +60,7 @@ public class MemberController {
         List<String> kakaoReturnValue = kakaoService.kakaoLogin(code, response);
 
         // Cookie 생성 및 직접 브라우저에 Set
-        Cookie cookie = new Cookie(JwtUtil.AUTHORIZATION_HEADER, kakaoReturnValue.get(0).substring(7));  //앞부분이 키값, 뒷부분이 value값
+        Cookie cookie = new Cookie(JwtUtil.ACCESS_TOKEN, kakaoReturnValue.get(0).substring(7));  //앞부분이 키값, 뒷부분이 value값
         cookie.setPath("/");
         response.addCookie(cookie);
         return ResponseUtil.response(kakaoReturnValue.get(1));
@@ -78,5 +79,11 @@ public class MemberController {
     public ResponseEntity<?> changeNickname(@RequestBody SignupRequestDto signupRequestDto,
                                             @AuthenticationPrincipal UserDetailsImpl userDetails) {
         return ResponseUtil.response(memberService.changeNickname(signupRequestDto, userDetails.getMember()));
+    }
+
+    // 토큰 재발행
+    @GetMapping("/auth/issue/token")
+    public ResponseDto<String> issuedToken(@AuthenticationPrincipal UserDetailsImpl userDetails, HttpServletResponse response){
+        return memberService.issuedToken(userDetails.getMember().getEmail(), response);
     }
 }

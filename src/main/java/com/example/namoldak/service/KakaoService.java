@@ -1,9 +1,13 @@
 package com.example.namoldak.service;
 
 import com.example.namoldak.domain.Member;
+import com.example.namoldak.domain.RefreshToken;
 import com.example.namoldak.dto.RequestDto.KakaoUserInfoDto;
 import com.example.namoldak.repository.MemberRepository;
+import com.example.namoldak.repository.RefreshTokenRepository;
 import com.example.namoldak.util.jwt.JwtUtil;
+import com.example.namoldak.util.jwt.TokenDto;
+import com.example.namoldak.util.security.UserDetailsImpl;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -13,6 +17,10 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
@@ -21,6 +29,7 @@ import org.springframework.web.client.RestTemplate;
 import javax.servlet.http.HttpServletResponse;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 // 기능 : OAuth.2.0 카카오 로그인
@@ -31,6 +40,8 @@ public class KakaoService {
     private final PasswordEncoder passwordEncoder;
     private final MemberRepository memberRepository;
     private final JwtUtil jwtUtil;
+    private final RefreshTokenRepository refreshTokenRepository;
+
 
     public List<String> kakaoLogin(String code, HttpServletResponse response) throws JsonProcessingException {
         // 1. "인가 코드"로 "액세스 토큰" 요청
@@ -43,14 +54,34 @@ public class KakaoService {
         Member kakaoUser = registerKakaoUserIfNeeded(kakaoUserInfo);
 
         // 4. JWT 토큰 반환 (방법2)
-        String createToken = jwtUtil.createToken(kakaoUser.getEmail());
-        response.addHeader(JwtUtil.AUTHORIZATION_HEADER, createToken);
+//        String createToken = jwtUtil.createToken(kakaoUser.getEmail());
+//        response.addHeader(JwtUtil.AUTHORIZATION_HEADER, createToken);
         //JWT토큰 만들어서 클라이언트에 보낸 다음에 클라이언트에서 직접 쿠키를 저장하는 방식으로 구현가능 (방법1)
         //서버에서 바로 그냥 쿠키 객체를 만들어서 토큰에 직접 넣어서 반환하는 방법도 있음 (방법2)
         //몇번 방식을 쓸 것인지는 react 쪽과 협의 필요!
 
+
+        // 4. 강제 로그인 처리
+        Authentication authentication = forceLogin(kakaoUser);
+
+        // 5. response Header에 JWT 토큰 추가
+        TokenDto tokenDto = jwtUtil.createAllToken(kakaoUserInfo.getEmail());
+
+        Optional<RefreshToken> refreshToken = Optional.ofNullable(refreshTokenRepository.findByEmail(kakaoUser.getEmail()));
+
+        if (refreshToken.isPresent()) {
+            refreshTokenRepository.saveRefreshToken(refreshToken.get().updateToken(tokenDto.getRefreshToken()));
+        } else {
+            RefreshToken newToken = new RefreshToken(tokenDto.getRefreshToken(), kakaoUserInfo.getEmail());
+            refreshTokenRepository.saveRefreshToken(newToken);
+        }
+
+        setHeader(response, tokenDto);
+
         List<String> kakaoReturnValue = new ArrayList<>();
-        kakaoReturnValue.add(createToken);
+//        kakaoReturnValue.add(createToken);
+        kakaoReturnValue.add(tokenDto.getRefreshToken());
+        kakaoReturnValue.add(tokenDto.getAccessToken());
         kakaoReturnValue.add(kakaoUser.getNickname());
 
         // 리턴값으로 프론트에서 요청한 토큰과 유저닉네임을 같이 반환
@@ -147,6 +178,20 @@ public class KakaoService {
             memberRepository.save(kakaoUser);
         }
         return kakaoUser;
+    }
+    // 4. 강제 로그인 처리
+    private Authentication forceLogin(Member kakaoUser) {
+        UserDetails userDetails = new UserDetailsImpl(kakaoUser, kakaoUser.getNickname());
+        Authentication authentication = new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+        return authentication;
+    }
+
+    // 5. response Header에 JWT 토큰 추가
+    private void setHeader(HttpServletResponse response, TokenDto tokenDto) {
+        response.addHeader(JwtUtil.ACCESS_TOKEN, tokenDto.getAccessToken());
+        response.addHeader(JwtUtil.REFRESH_TOKEN, tokenDto.getRefreshToken());
+
     }
 }
 
