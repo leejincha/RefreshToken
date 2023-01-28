@@ -7,7 +7,6 @@ import com.example.namoldak.dto.RequestDto.SignupRequestDto;
 import com.example.namoldak.dto.ResponseDto.MemberResponseDto;
 import com.example.namoldak.dto.ResponseDto.PrivateResponseBody;
 import com.example.namoldak.dto.ResponseDto.ResponseDto;
-import com.example.namoldak.repository.RefreshTokenRepository;
 import com.example.namoldak.util.GlobalResponse.CustomException;
 import com.example.namoldak.util.GlobalResponse.ResponseUtil;
 import com.example.namoldak.util.GlobalResponse.code.StatusCode;
@@ -31,7 +30,7 @@ public class MemberService {
     private final MemberRepository memberRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
-    private final RefreshTokenRepository refreshTokenRepository;
+    private final RefreshTokenService refreshTokenService;
 
     // 회원가입
     @Transactional
@@ -71,13 +70,13 @@ public class MemberService {
         TokenDto tokenDto = jwtUtil.createAllToken(signupRequestDto.getEmail());
 
         // user email 값에 해당하는 refreshToken 을 DB에서 가져옴
-        Optional<RefreshToken> refreshToken = Optional.ofNullable(refreshTokenRepository.findByEmail(member.getEmail()));
+        Optional<RefreshToken> refreshToken = Optional.ofNullable(refreshTokenService.findByEmail(member.getEmail()));
 
         if (refreshToken.isPresent()) {
-            refreshTokenRepository.saveRefreshToken(refreshToken.get().updateToken(tokenDto.getRefreshToken()));
+            refreshTokenService.saveRefreshToken(refreshToken.get().updateToken(tokenDto.getRefreshToken()));
         } else {
-            RefreshToken newToken = new RefreshToken(tokenDto.getRefreshToken(), signupRequestDto.getEmail());
-            refreshTokenRepository.saveRefreshToken(newToken);
+            RefreshToken newToken = new RefreshToken(signupRequestDto.getEmail(),tokenDto.getRefreshToken());
+            refreshTokenService.saveRefreshToken(newToken);
         }
 
         setHeader(response, tokenDto);
@@ -135,13 +134,13 @@ public class MemberService {
     // 로그아웃
     public ResponseEntity<?> signout(String email) {
         // 해당 유저의 refreshtoken 이 없을 경우
-        if(refreshTokenRepository.findByEmail(email) == null){
+        if(refreshTokenService.findByEmail(email) == null){
             throw new CustomException(StatusCode.INVALID_TOKEN);
         }
         // 자신의 refreshtoken 만 삭제 가능
-        String memberIdrepo = refreshTokenRepository.findByEmail(email).getEmail();
+        String memberIdrepo = refreshTokenService.findByEmail(email).getEmail();
         if(email.equals(memberIdrepo)){
-            refreshTokenRepository.deleteRefreshToken(email);
+            refreshTokenService.deleteRefreshToken(email);
             return ResponseUtil.response(StatusCode.SIGNOUT_OK);
         }else{
             return ResponseUtil.response(StatusCode.BAD_REFRESH_TOKEN);

@@ -1,7 +1,7 @@
 package com.example.namoldak.util.jwt;
 
 import com.example.namoldak.domain.RefreshToken;
-import com.example.namoldak.repository.RefreshTokenRepository;
+import com.example.namoldak.service.RefreshTokenService;
 import com.example.namoldak.util.security.UserDetailsServiceImpl;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
@@ -27,7 +27,7 @@ import java.util.Optional;
 public class JwtUtil {
 
     private final UserDetailsServiceImpl userDetailsService;
-    private final RefreshTokenRepository refreshTokenRepository;
+    private final RefreshTokenService refreshTokenService;
 
 //    public static final String AUTHORIZATION_HEADER = "Authorization";
 //    private static final String BEARER_PREFIX = "Bearer ";
@@ -119,7 +119,7 @@ public class JwtUtil {
         if(!validateToken(token)) return false;
 
         // DB에 저장한 토큰 비교
-        Optional<RefreshToken> refreshToken = Optional.ofNullable(refreshTokenRepository.findByEmail(getUserInfoFromToken(token)));
+        Optional<RefreshToken> refreshToken = Optional.ofNullable(refreshTokenService.findByEmail(getUserInfoFromToken(token)));
 
         return refreshToken.isPresent() && token.equals(refreshToken.get().getRefreshToken());
     }

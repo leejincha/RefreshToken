@@ -4,7 +4,6 @@ import com.example.namoldak.domain.Member;
 import com.example.namoldak.domain.RefreshToken;
 import com.example.namoldak.dto.RequestDto.KakaoUserInfoDto;
 import com.example.namoldak.repository.MemberRepository;
-import com.example.namoldak.repository.RefreshTokenRepository;
 import com.example.namoldak.util.jwt.JwtUtil;
 import com.example.namoldak.util.jwt.TokenDto;
 import com.example.namoldak.util.security.UserDetailsImpl;
@@ -40,7 +39,7 @@ public class KakaoService {
     private final PasswordEncoder passwordEncoder;
     private final MemberRepository memberRepository;
     private final JwtUtil jwtUtil;
-    private final RefreshTokenRepository refreshTokenRepository;
+    private final RefreshTokenService refreshTokenService;
 
 
     public List<String> kakaoLogin(String code, HttpServletResponse response) throws JsonProcessingException {
@@ -67,13 +66,13 @@ public class KakaoService {
         // 5. response Header에 JWT 토큰 추가
         TokenDto tokenDto = jwtUtil.createAllToken(kakaoUserInfo.getEmail());
 
-        Optional<RefreshToken> refreshToken = Optional.ofNullable(refreshTokenRepository.findByEmail(kakaoUser.getEmail()));
+        Optional<RefreshToken> refreshToken = Optional.ofNullable(refreshTokenService.findByEmail(kakaoUser.getEmail()));
 
         if (refreshToken.isPresent()) {
-            refreshTokenRepository.saveRefreshToken(refreshToken.get().updateToken(tokenDto.getRefreshToken()));
+            refreshTokenService.saveRefreshToken(refreshToken.get().updateToken(tokenDto.getRefreshToken()));
         } else {
-            RefreshToken newToken = new RefreshToken(tokenDto.getRefreshToken(), kakaoUserInfo.getEmail());
-            refreshTokenRepository.saveRefreshToken(newToken);
+            RefreshToken newToken = new RefreshToken(kakaoUserInfo.getEmail(),tokenDto.getRefreshToken());
+            refreshTokenService.saveRefreshToken(newToken);
         }
 
         setHeader(response, tokenDto);
