@@ -86,4 +86,10 @@ public class MemberController {
     public ResponseDto<String> issuedToken(@AuthenticationPrincipal UserDetailsImpl userDetails, HttpServletResponse response){
         return memberService.issuedToken(userDetails.getMember().getEmail(), response);
     }
+
+    // 로그아웃
+    @PostMapping("/auth/signout")
+    public ResponseEntity<?> signout(@AuthenticationPrincipal UserDetailsImpl userDetails){
+        return memberService.signout(userDetails.getMember().getEmail());
+    }
 }
